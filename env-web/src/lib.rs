@@ -131,12 +131,16 @@ impl Environment for Env {
                 }
             })
             .and_then(|buf_val| {
+                web_sys::console::time_with_label("parsing");
                 assert!(buf_val.is_instance_of::<js_sys::ArrayBuffer>());
                 let typebuf = js_sys::Uint8Array::new(&buf_val);
                 let mut body = vec![0; typebuf.length() as usize];
                 typebuf.copy_to(&mut body[..]);
                 match serde_json::from_slice(&body) {
-                    Ok(r) => future::ok(r),
+                    Ok(r) => {
+                        web_sys::console::time_end_with_label("parsing");
+                        future::ok(r)
+                    },
                     Err(e) => future::err(EnvError::from(e).into()),
                 }
             })
