@@ -51,6 +51,7 @@ pub struct CatalogEntry {
 pub trait CatalogAdapter {
     fn resource() -> &'static str;
     fn catalogs(m: &Manifest) -> &[ManifestCatalog];
+    fn selected(action: &ActionLoad) -> Option<&ResourceRequest>;
 }
 impl CatalogAdapter for MetaPreview {
     fn resource() -> &'static str {
@@ -59,6 +60,12 @@ impl CatalogAdapter for MetaPreview {
     fn catalogs(m: &Manifest) -> &[ManifestCatalog] {
         &m.catalogs
     }
+    fn selected(action: &ActionLoad) -> Option<&ResourceRequest> {
+        match action {
+            ActionLoad::CatalogFiltered(req) => Some(req),
+            _ => None
+        }
+    }
 }
 impl CatalogAdapter for DescriptorPreview {
     fn resource() -> &'static str {
@@ -66,6 +73,12 @@ impl CatalogAdapter for DescriptorPreview {
     }
     fn catalogs(m: &Manifest) -> &[ManifestCatalog] {
         &m.addon_catalogs
+    }
+    fn selected(action: &ActionLoad) -> Option<&ResourceRequest> {
+        match action {
+            ActionLoad::AddonsFiltered(req) => Some(req),
+            _ => None
+        }
     }
 }
 
@@ -105,7 +118,12 @@ where
     fn update(&mut self, ctx: &Ctx<Env>, msg: &Msg) -> Effects {
         let addons = &ctx.content.addons;
         match msg {
-            Msg::Action(Action::Load(ActionLoad::CatalogFiltered(selected_req))) => {
+            Msg::Action(Action::Load(action_load)) => {
+                let selected_req = match T::selected(&action_load) {
+                    Some(x) => x,
+                    _ => return Effects::none()
+                };
+
                 // Catalogs are NOT filtered by type, cause the UI gets to decide whether to
                 // only show catalogs for the selected type, or all of them
                 let catalogs: Vec<CatalogEntry> = addons
