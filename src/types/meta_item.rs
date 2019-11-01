@@ -1,5 +1,6 @@
 use super::stream::*;
 use chrono::{DateTime, Utc};
+use serde::de::{Deserialize, Deserializer};
 use serde_derive::*;
 
 // Type can be represented as:
@@ -65,6 +66,7 @@ pub struct MetaPreview {
     #[deprecated]
     #[serde(default)]
     #[serde(alias = "director")]
+    #[serde(deserialize_with = "deserialize_default_vec_string")]
     pub directors: Vec<String>,
     #[serde(default, skip_serializing_if = "PosterShape::is_unspecified")]
     pub poster_shape: PosterShape,
@@ -94,6 +96,7 @@ pub struct MetaDetail {
     #[deprecated]
     #[serde(default)]
     #[serde(alias = "director")]
+    #[serde(deserialize_with = "deserialize_default_vec_string")]
     pub directors: Vec<String>,
     #[deprecated]
     #[serde(default)]
@@ -144,4 +147,14 @@ pub struct Video {
 pub struct SeriesInfo {
     pub season: u32,
     pub episode: u32,
+}
+
+fn deserialize_default_vec_string<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::deserialize(deserializer)
+        .ok()
+        .unwrap_or(Option::None)
+        .unwrap_or(Vec::new()))
 }
