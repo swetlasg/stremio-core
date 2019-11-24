@@ -1,11 +1,11 @@
 use super::{Ctx, LibraryLoadable};
 use crate::state_types::*;
-use crate::types::{LibBucket, LibItem, UID};
+use crate::types::{LibItem, UID};
 use derivative::*;
 use itertools::Itertools;
 use serde_derive::*;
 
-#[derive(Derivative, Debug, Clone, Serialize, PartialEq)]
+#[derive(Derivative, Debug, Clone, PartialEq, Serialize)]
 #[derivative(Default)]
 #[serde(tag = "type", content = "content")]
 pub enum LibraryState {
@@ -14,128 +14,159 @@ pub enum LibraryState {
     Loading(UID),
     Ready(UID),
 }
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+pub struct Selected {
+    type_name: Option<String>,
+}
+pub type TypeNames = Vec<String>;
+pub type LibItems = Vec<LibItem>;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Default, Debug, Clone, Serialize)]
 pub struct LibraryFiltered {
     pub library_state: LibraryState,
-    pub selected: Option<String>,
-    pub type_names: Vec<String>,
-    pub items: Vec<LibItem>,
+    pub selected: Selected,
+    pub type_names: TypeNames,
+    pub lib_items: LibItems,
 }
 
 impl<Env: Environment + 'static> UpdateWithCtx<Ctx<Env>> for LibraryFiltered {
     fn update(&mut self, ctx: &Ctx<Env>, msg: &Msg) -> Effects {
         match msg {
             Msg::Action(Action::Load(ActionLoad::LibraryFiltered { type_name })) => {
-                let bucket = match &ctx.library {
-                    LibraryLoadable::Ready(bucket) => Some(bucket),
-                    _ => None,
-                };
-                let (selected, selected_effects) =
-                    selected_reducer(self.selected.as_ref(), Some(&type_name));
-                let (type_names, type_names_effects) = type_names_reducer(&self.type_names, bucket);
-                let (items, items_effects) =
-                    lib_items_reducer(&self.items, bucket, Some(&type_name));
+                let (selected, selected_effects) = reduce(
+                    &self.selected,
+                    SelectedAction::Select { type_name },
+                    selected_reducer,
+                    Effects::none(),
+                );
+                let (lib_items, lib_items_effects) = reduce(
+                    &self.lib_items,
+                    LibItemsAction::Select {
+                        library: &ctx.library,
+                        type_name,
+                    },
+                    lib_items_reducer,
+                    Effects::none(),
+                );
                 self.selected = selected;
-                self.type_names = type_names;
-                self.items = items;
-                selected_effects
-                    .join(type_names_effects)
-                    .join(items_effects)
+                self.lib_items = lib_items;
+                selected_effects.join(lib_items_effects)
             }
             Msg::Event(Event::CtxChanged)
             | Msg::Event(Event::LibPersisted)
             | Msg::Internal(Internal::LibLoaded(_)) => {
-                let bucket = match &ctx.library {
-                    LibraryLoadable::Ready(bucket) => Some(bucket),
-                    _ => None,
-                };
-                let (library_state, library_state_effects) =
-                    library_state_reducer(&self.library_state, &ctx.library);
-                let (type_names, type_names_effects) = type_names_reducer(&self.type_names, bucket);
-                let (items, items_effects) =
-                    lib_items_reducer(&self.items, bucket, self.selected.as_ref());
+                let (library_state, library_state_effects) = reduce(
+                    &self.library_state,
+                    LibraryStateAction::LibraryChanged {
+                        library: &ctx.library,
+                    },
+                    library_state_reducer,
+                    Effects::none(),
+                );
+                let (type_names, type_names_effects) = reduce(
+                    &self.type_names,
+                    TypeNamesAction::LibraryChanged {
+                        library: &ctx.library,
+                    },
+                    type_names_reducer,
+                    Effects::none(),
+                );
+                let (lib_items, lib_items_effects) = reduce(
+                    &self.lib_items,
+                    LibItemsAction::LibraryChanged {
+                        library: &ctx.library,
+                        type_name: &self.selected.type_name,
+                    },
+                    lib_items_reducer,
+                    Effects::none(),
+                );
                 self.library_state = library_state;
                 self.type_names = type_names;
-                self.items = items;
+                self.lib_items = lib_items;
                 library_state_effects
                     .join(type_names_effects)
-                    .join(items_effects)
+                    .join(lib_items_effects)
             }
             _ => Effects::none().unchanged(),
         }
     }
 }
 
-fn library_state_reducer(
-    prev_library_state: &LibraryState,
-    library: &LibraryLoadable,
-) -> (LibraryState, Effects) {
-    let next_library_state = match library {
-        LibraryLoadable::Ready(bucket) => LibraryState::Ready(bucket.uid.to_owned()),
-        LibraryLoadable::Loading(uid) => LibraryState::Loading(uid.to_owned()),
-        LibraryLoadable::NotLoaded => LibraryState::NotLoaded,
+enum LibraryStateAction<'a> {
+    LibraryChanged { library: &'a LibraryLoadable },
+}
+fn library_state_reducer(prev: &LibraryState, action: LibraryStateAction) -> (LibraryState, bool) {
+    let next = match action {
+        LibraryStateAction::LibraryChanged { library } => match library {
+            LibraryLoadable::Ready(bucket) => LibraryState::Ready(bucket.uid.to_owned()),
+            LibraryLoadable::Loading(uid) => LibraryState::Loading(uid.to_owned()),
+            LibraryLoadable::NotLoaded => LibraryState::NotLoaded,
+        },
     };
-    if prev_library_state.eq(&next_library_state) {
-        (prev_library_state.to_owned(), Effects::none().unchanged())
-    } else {
-        (next_library_state, Effects::none())
-    }
+    let changed = prev.ne(&next);
+    (next, changed)
 }
 
-fn selected_reducer(
-    prev_selected: Option<&String>,
-    type_name: Option<&String>,
-) -> (Option<String>, Effects) {
-    let next_selected = match type_name {
-        Some(type_name) => Some(type_name),
-        None => None,
+enum SelectedAction<'a> {
+    Select { type_name: &'a String },
+}
+fn selected_reducer(prev: &Selected, action: SelectedAction) -> (Selected, bool) {
+    let next = match action {
+        SelectedAction::Select { type_name } => Selected {
+            type_name: Some(type_name.to_owned()),
+        },
     };
-    if prev_selected.eq(&next_selected) {
-        (prev_selected.cloned(), Effects::none().unchanged())
-    } else {
-        (next_selected.cloned(), Effects::none())
-    }
+    let changed = prev.ne(&next);
+    (next, changed)
 }
 
-fn type_names_reducer(
-    prev_type_names: &[String],
-    bucket: Option<&LibBucket>,
-) -> (Vec<String>, Effects) {
-    let next_type_names = match bucket {
-        Some(bucket) => bucket
+enum TypeNamesAction<'a> {
+    LibraryChanged { library: &'a LibraryLoadable },
+}
+fn type_names_reducer(prev: &TypeNames, action: TypeNamesAction) -> (TypeNames, bool) {
+    let next = match action {
+        TypeNamesAction::LibraryChanged {
+            library: LibraryLoadable::Ready(bucket),
+        } => bucket
             .items
             .values()
             .filter(|x| !x.removed)
             .map(|x| x.type_name.to_owned())
             .unique()
             .collect(),
-        _ => Vec::new(),
+        _ => vec![],
     };
-    if prev_type_names.iter().eq(next_type_names.iter()) {
-        (prev_type_names.to_owned(), Effects::none().unchanged())
-    } else {
-        (next_type_names, Effects::none())
-    }
+    let changed = prev.iter().ne(next.iter());
+    (next, changed)
 }
 
-fn lib_items_reducer(
-    prev_lib_items: &[LibItem],
-    bucket: Option<&LibBucket>,
-    type_name: Option<&String>,
-) -> (Vec<LibItem>, Effects) {
-    let next_lib_items = match (bucket, type_name) {
-        (Some(bucket), Some(type_name)) => bucket
+enum LibItemsAction<'a> {
+    LibraryChanged {
+        library: &'a LibraryLoadable,
+        type_name: &'a Option<String>,
+    },
+    Select {
+        library: &'a LibraryLoadable,
+        type_name: &'a String,
+    },
+}
+fn lib_items_reducer(prev: &LibItems, action: LibItemsAction) -> (LibItems, bool) {
+    let next = match action {
+        LibItemsAction::LibraryChanged {
+            library: LibraryLoadable::Ready(bucket),
+            type_name: Some(type_name),
+        }
+        | LibItemsAction::Select {
+            library: LibraryLoadable::Ready(bucket),
+            type_name,
+        } => bucket
             .items
             .values()
             .filter(|item| !item.removed && item.type_name.eq(type_name))
             .cloned()
             .collect(),
-        _ => Vec::new(),
+        _ => vec![],
     };
-    if prev_lib_items.iter().eq(next_lib_items.iter()) {
-        (prev_lib_items.to_owned(), Effects::none().unchanged())
-    } else {
-        (next_lib_items, Effects::none())
-    }
+    let changed = prev.iter().ne(next.iter());
+    (next, changed)
 }
