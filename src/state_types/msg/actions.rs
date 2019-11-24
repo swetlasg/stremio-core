@@ -14,14 +14,10 @@ pub enum ActionLoad {
         extra: Vec<ExtraProp>,
     },
     CatalogFiltered(ResourceRequest),
-    Detail {
+    MetaDetails {
         type_name: String,
         id: String,
         video_id: Option<String>,
-    },
-    Streams {
-        type_name: String,
-        id: String,
     },
     Notifications,
     LibraryFiltered {
