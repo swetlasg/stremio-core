@@ -11,8 +11,12 @@ use serde_derive::*;
 pub enum LibraryState {
     #[derivative(Default)]
     NotLoaded,
-    Loading(UID),
-    Ready(UID),
+    Loading {
+        uid: UID,
+    },
+    Ready {
+        uid: UID,
+    },
 }
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct Selected {
@@ -98,8 +102,12 @@ enum LibraryStateAction<'a> {
 fn library_state_reducer(prev: &LibraryState, action: LibraryStateAction) -> (LibraryState, bool) {
     let next = match action {
         LibraryStateAction::LibraryChanged { library } => match library {
-            LibraryLoadable::Ready(bucket) => LibraryState::Ready(bucket.uid.to_owned()),
-            LibraryLoadable::Loading(uid) => LibraryState::Loading(uid.to_owned()),
+            LibraryLoadable::Ready(bucket) => LibraryState::Ready {
+                uid: bucket.uid.to_owned(),
+            },
+            LibraryLoadable::Loading(uid) => LibraryState::Loading {
+                uid: uid.to_owned(),
+            },
             LibraryLoadable::NotLoaded => LibraryState::NotLoaded,
         },
     };
