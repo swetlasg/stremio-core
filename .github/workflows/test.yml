@@ -19,8 +19,8 @@ jobs:
       with:
         registry-url: 'https://npm.pkg.github.com'
     - name: Install dependencies
-      run: yarn install
+      run: cargo install
       env:
         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Test
-      run: yarn test
+      run: cargo test
