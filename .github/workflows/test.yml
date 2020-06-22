@@ -18,5 +18,7 @@ jobs:
       name: Setup Node
       with:
         registry-url: 'https://npm.pkg.github.com'
+    - name: Submodules
+      run: git submodule update --init --recursive
     - name: Test
       run: cargo test
